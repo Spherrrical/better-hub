@@ -942,13 +942,13 @@ Only GET requests are allowed. For mutations use the dedicated tools.`,
 
 		// ── Comment tools ────────────────────────────────────────────────────
 
-		commentOnIssue: tool({
+		comment: tool({
 			description:
-				"Add a comment to a GitHub issue. Use when the user wants to comment on an issue.",
+				"Add a comment to a GitHub issue or pull request.",
 			inputSchema: z.object({
 				owner: z.string().describe("Repository owner"),
 				repo: z.string().describe("Repository name"),
-				issueNumber: z.number().describe("Issue number"),
+				issueNumber: z.number().describe("Issue or PR number"),
 				body: z.string().describe("Comment body (markdown supported)"),
 			}),
 			execute: async ({ owner, repo, issueNumber, body }) => {
@@ -956,31 +956,6 @@ Only GET requests are allowed. For mutations use the dedicated tools.`,
 					owner,
 					repo,
 					issue_number: issueNumber,
-					body,
-				});
-				return {
-					success: true,
-					id: data.id,
-					html_url: toAppUrl(data.html_url),
-				};
-			},
-		}),
-
-		commentOnPR: tool({
-			description:
-				"Add a comment to a pull request (as a general comment, not an inline review comment).",
-			inputSchema: z.object({
-				owner: z.string().describe("Repository owner"),
-				repo: z.string().describe("Repository name"),
-				pullNumber: z.number().describe("PR number"),
-				body: z.string().describe("Comment body (markdown supported)"),
-			}),
-			execute: async ({ owner, repo, pullNumber, body }) => {
-				// PR comments use the issues API
-				const { data } = await octokit.issues.createComment({
-					owner,
-					repo,
-					issue_number: pullNumber,
 					body,
 				});
 				return {
@@ -1984,63 +1959,30 @@ ${activeFilePrompt}${inlineContextPrompt}
 ${allDiffs || "(No file changes available)"}${fileListSection}
 
 ## Instructions
-- Be concise and specific. Reference file names and line numbers when discussing code.
-- Use markdown formatting for code snippets and emphasis.
-- When suggesting improvements, show the specific code change.
-- If asked about something not in the PR context, say so clearly.
-- If the user has attached a code snippet above, ALWAYS answer about that specific code. Never say you don't know which line they mean.
-- If you need to see a file that's listed but not shown above, use the **getFileContent** tool.
-- **NEVER stop mid-task.** If you need multiple tool calls to fulfill a request, keep going until you're done. Always provide a complete final response.
+- Be concise and specific. Reference file names, line numbers, and show specific code changes.
+- If the user attached a code snippet above, ALWAYS answer about that specific code.
+- Use **getFileContent** to read files whose diffs were omitted above.
+- **NEVER stop mid-task.** Keep calling tools until done. Always provide a complete final response.
 - **IMPORTANT:** When linking to repos, PRs, issues, or users, ALWAYS use this app's URLs (e.g. \`${process.env.NEXT_PUBLIC_APP_URL || ""}/repos/{owner}/{repo}\`), NEVER use github.com URLs.
+- After any mutation affecting the current page, ALWAYS call **refreshPage**.
 
 ## PR Tools
-You have tools to directly modify files on the PR branch (\`${prContext.headBranch}\`):
-- **getFileContent**: Read the full contents of a file. Use this before editing to get the current state (diffs only show hunks, not full files). **Also use this to read files whose diffs were omitted above for space.**
-- **editFile**: Edit an existing file and commit the change. Always read the file first with getFileContent.
+Tools for modifying files on the PR branch (\`${prContext.headBranch}\`):
+- **getFileContent**: Read full file contents (use before editing; also for files whose diffs were omitted).
+- **editFile**: Edit a file and commit. Always read first with getFileContent.
 - **createFile**: Create a new file and commit it.
-- **amendCommit**: Amend the last commit on the branch. Use this to add more changes to the previous commit instead of creating a new one — e.g., fixing a follow-up typo or adding a forgotten file. Accepts multiple files at once.
+- **amendCommit**: Amend the last commit (for follow-up fixes). Accepts multiple files.
 
-When asked to make changes:
-1. First use getFileContent to read the current file
-2. Then use editFile with the complete new file content
-3. Write a clear, concise commit message
-4. If the user asks to amend, fix up, or add to the last commit, use amendCommit instead of editFile
+Read file first → editFile/createFile → clear commit message. Use amendCommit when asked to amend/fixup.
+All commits attributed to the signed-in user. Only use tools when explicitly asked to make changes.
 
-All commits are attributed to the signed-in user — never use your own identity (Ghost) as the commit author.
+${MULTI_FILE_COMMIT_PROMPT}
 
-Only use tools when the user explicitly asks you to make changes or commit something. For reviews and suggestions, just describe the changes in text.
+${QUERYGITHUB_PROMPT}
 
-## Multi-file Commits (API-based)
-For changes spanning multiple files, use the API-based commit tools:
-- **stageFile**: Stage a file with its full content (one call per file)
-- **commitChanges**: Commit all staged files to a branch at once
-- **createPullRequestFromBranch**: Open a PR from the committed branch
+${MEMORY_PROMPT}
 
-## Merge Conflict Resolution (API-based)
-For merge conflicts, use:
-- **getMergeConflictInfo**: See file differences between both branches
-- **commitMergeResolution**: Create a merge commit with resolved files
-
-**For complex git operations** (cherry-pick, rebase, bisect, etc.), use the **sandbox tools** — startSandbox to clone the repo, then sandboxRun to execute git commands. NEVER say you can't do these operations.
-
-## General Tools
-You also have general GitHub tools (search repos, star, fork, list issues/PRs, navigate, comment, labels, assign, request reviewers, create branches, etc.). Use them when the user asks for things beyond this PR.
-
-**IMPORTANT:** After any mutation that affects the current page (commenting, adding labels, requesting reviewers, merging, closing, etc.), ALWAYS call **refreshPage** at the end so the UI updates.
-
-## queryGitHub (Flexible API)
-For any read-only query not covered by a specific tool, use queryGitHub to make arbitrary GET requests to the GitHub REST API. Examples:
-- "GET /repos/{owner}/{repo}/branches" with { owner, repo }
-- "GET /repos/{owner}/{repo}/releases" with { owner, repo, per_page: 5 }
-- "GET /repos/{owner}/{repo}/commits" with { owner, repo, per_page: 10 }
-- "GET /repos/{owner}/{repo}/contributors" with { owner, repo }
-This is very powerful — use it to answer almost any question about repos, users, orgs, etc.
-
-## Memory
-You have long-term memory via \`saveMemory\` and \`recallMemory\`. Use \`saveMemory\` when the user asks you to remember something — preferences, project context, decisions, or any fact they want persisted across conversations. Use \`recallMemory\` when the user asks "do you remember", "what did I say about", or when past context would help. Previously recalled memories (if any) are appended to this prompt — use them naturally without announcing them unless asked.
-
-## Semantic Search (USE FIRST)
-**IMPORTANT:** When the user asks to find, list, or search for PRs/issues by topic or description (e.g. "find PRs about X", "list all PRs regarding Y", "any issues related to Z"), ALWAYS call **semanticSearch** FIRST before trying GitHub API tools. semanticSearch does natural language search across all content the user has previously viewed — it understands meaning, not just keywords. Only fall back to GitHub search/list tools if semanticSearch returns empty results.
+${SEMANTIC_SEARCH_PROMPT}
 
 ${sandboxPrompt || ""}`;
 }
@@ -2073,51 +2015,28 @@ ${inlineContextPrompt}
 ${commentsFormatted ? `### Comments\n${commentsFormatted}` : ""}
 
 ## Instructions
-- Be concise and specific. Reference file names and line numbers when discussing code.
-- Use markdown formatting for code snippets and emphasis.
-- When suggesting fixes, show the specific code change.
-- If asked about something not in the issue context, say so clearly.
-- If the user has attached a code snippet above, ALWAYS answer about that specific code. Never say you don't know which line they mean.
-- **NEVER stop mid-task.** If you need multiple tool calls to fulfill a request, keep going until you're done. Always provide a complete final response.
+- Be concise and specific. Reference file names, line numbers, and show specific code changes.
+- If the user attached a code snippet above, ALWAYS answer about that specific code.
+- **NEVER stop mid-task.** Keep calling tools until done. Always provide a complete final response.
 - **IMPORTANT:** When linking to repos, PRs, issues, or users, ALWAYS use this app's URLs (e.g. \`${process.env.NEXT_PUBLIC_APP_URL || ""}/repos/{owner}/{repo}\`), NEVER use github.com URLs.
+- After any mutation affecting the current page, ALWAYS call **refreshPage**.
 
 ## Issue Tools
-You have tools to read and modify files in the repository:
-- **getFileContent**: Read the full contents of a file from the default branch (\`${defaultBranch}\`).
-- **editFile**: Edit an existing file. Creates a branch \`${branchName}\` on first edit, then commits to it.
-- **createFile**: Create a new file. Same branch strategy as editFile.
-- **createPullRequest**: Create a PR from the working branch to fix this issue.
+- **getFileContent**: Read full file contents from \`${defaultBranch}\`.
+- **editFile**: Edit a file. Creates branch \`${branchName}\` on first edit.
+- **createFile**: Create a new file (same branch strategy).
+- **createPullRequest**: Open a PR from the working branch.
 
-When asked to make changes or fix the issue:
-1. First use getFileContent to read relevant files
-2. Use editFile/createFile to make changes (automatically creates a branch)
-3. Use createPullRequest to open a PR that references this issue
+Read files first → editFile/createFile → createPullRequest. All commits attributed to the signed-in user.
+Only use tools when explicitly asked to make changes or fix something.
 
-All commits are attributed to the signed-in user — never use your own identity (Ghost) as the commit author.
+${MULTI_FILE_COMMIT_PROMPT}
 
-Only use tools when the user explicitly asks you to make changes, fix something, or create a PR. For analysis and suggestions, just describe the changes in text.
+${QUERYGITHUB_PROMPT}
 
-## Multi-file Commits (API-based)
-For changes spanning multiple files, you can also use:
-- **stageFile**: Stage a file with its full content (one call per file)
-- **commitChanges**: Commit all staged files to a branch at once
-- **createPullRequestFromBranch**: Open a PR from the committed branch
+${MEMORY_PROMPT}
 
-**For complex git operations** (cherry-pick, rebase, bisect, etc.), use the **sandbox tools** — startSandbox to clone the repo, then sandboxRun to execute git commands. NEVER say you can't do these operations.
-
-## General Tools
-You also have general GitHub tools (search repos, star, fork, list issues/PRs, navigate, comment, labels, assign, create branches, etc.). Use them when the user asks for things beyond this issue.
-
-**IMPORTANT:** After any mutation that affects the current page (commenting, adding labels, closing, assigning, etc.), ALWAYS call **refreshPage** at the end so the UI updates.
-
-## queryGitHub (Flexible API)
-For any read-only query not covered by a specific tool, use queryGitHub to make arbitrary GET requests to the GitHub REST API. This lets you answer almost any question about repos, users, orgs, branches, releases, commits, etc.
-
-## Memory
-You have long-term memory via \`saveMemory\` and \`recallMemory\`. Use \`saveMemory\` when the user asks you to remember something — preferences, project context, decisions, or any fact they want persisted across conversations. Use \`recallMemory\` when the user asks "do you remember", "what did I say about", or when past context would help. Previously recalled memories (if any) are appended to this prompt — use them naturally without announcing them unless asked.
-
-## Semantic Search (USE FIRST)
-**IMPORTANT:** When the user asks to find, list, or search for PRs/issues by topic or description, ALWAYS call **semanticSearch** FIRST. It does natural language search across previously viewed content. Only fall back to GitHub API tools if semanticSearch returns empty results.
+${SEMANTIC_SEARCH_PROMPT}
 
 ${sandboxPrompt || ""}`;
 }
@@ -2143,58 +2062,30 @@ ${currentUser ? `Authenticated GitHub user: ${currentUser.login}` : ""}
 ${inlineContextPrompt}
 
 ## Instructions
-- Be concise and helpful. Keep responses short unless the user asks for detail.
-- Use markdown formatting.
-- Tool results are automatically rendered as rich UI components. Do NOT repeat tool output as text/markdown — just add brief commentary.
-- **NEVER stop mid-task.** If you need multiple tool calls to answer a question, keep calling tools until you have everything you need, then give a complete response. Always finish what you started.
-- If the user has attached a code snippet above, ALWAYS answer about that specific code.
-- **IMPORTANT:** When linking to repos, PRs, issues, or users, ALWAYS use this app's URLs (e.g. \`${process.env.NEXT_PUBLIC_APP_URL || ""}/repos/{owner}/{repo}/pulls/{number}\`), NEVER use github.com URLs. Use the route patterns: \`/repos/{owner}/{repo}\` for repos, \`/repos/{owner}/{repo}/pulls/{number}\` for PRs, \`/repos/{owner}/{repo}/issues/{number}\` for issues, \`/users/{username}\` for users.
+- Be concise and helpful. Tool results render as rich UI — do NOT repeat tool output as text.
+- If the user attached a code snippet above, ALWAYS answer about that specific code.
+- **NEVER stop mid-task.** Keep calling tools until done. Always provide a complete final response.
+- **IMPORTANT:** ALWAYS use this app's URLs (e.g. \`${process.env.NEXT_PUBLIC_APP_URL || ""}/repos/{owner}/{repo}\`), NEVER github.com URLs.
 
 ## Action Rules
-- For destructive actions (delete repo, close issue), ask for confirmation first.
-- For star/unstar/fork, proceed directly \u2014 these are low-risk.
-- When creating issues or PRs, ask for details if not provided (title, body).
-- **ALWAYS call refreshPage** after any mutation that affects the current page (star, comment, close issue, merge PR, add labels, etc.). Call it once at the end, after all mutations are done.
-- **ALWAYS navigate within the app** — never send users to github.com when there's an in-app page.
-- **NEVER say you can't perform git operations.** For multi-file commits, use stageFile + commitChanges + createPullRequestFromBranch (API-based, instant). For operations requiring a shell (cherry-pick, rebase, bisect), use the cloud sandbox (startSandbox → sandboxRun).
-- Use navigateTo for top-level pages: dashboard, repos, prs, issues, notifications, settings, search, trending, orgs.
-- Use openRepo to navigate to a specific repository.
-- Use openRepoTab to navigate to a repo section: actions, commits, issues, pulls, people, security, settings.
-- Use openWorkflowRun to navigate to a specific workflow run / GitHub Action.
-- Use openCommit to navigate to a specific commit.
-- Use openIssue to navigate to a specific issue.
-- Use openPullRequest to navigate to a specific pull request.
-- Use openUser to navigate to a user's profile page.
-- Only use openUrl for truly external URLs with no in-app equivalent.
-
-## Available Navigation
-- **Top-level pages:** dashboard, repos, prs, issues, notifications, settings, search, trending, orgs
-- **Repo sections:** openRepoTab — actions, commits, issues, pulls, people, security, settings
-- **Specific items:** openRepo, openWorkflowRun, openCommit, openIssue, openPullRequest, openUser
-
-## queryGitHub (Flexible API)
-You have a powerful queryGitHub tool that can make any read-only GET request to the GitHub REST API. Use it when the user asks about things your specific tools don't cover — branches, releases, commits, contributors, workflow runs, repo stats, org members, etc.
-
-Examples:
-- "GET /repos/{owner}/{repo}/branches" with { owner, repo }
-- "GET /repos/{owner}/{repo}/releases" with { owner, repo, per_page: 5 }
-- "GET /repos/{owner}/{repo}/actions/runs" with { owner, repo, per_page: 5 }
-- "GET /orgs/{org}/members" with { org }
-- "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews" with { owner, repo, pull_number }
-
-You also have tools for: commenting on issues/PRs, adding/removing labels, assigning users, requesting PR reviewers, and creating branches.
+- Destructive actions (delete repo, close issue): ask confirmation. Star/fork: proceed directly.
+- **ALWAYS call refreshPage** after any mutation affecting the current page.
+- **ALWAYS navigate within the app** — use navigation tools, not github.com links.
+- **NEVER say you can't perform git operations.** Use stageFile + commitChanges for multi-file commits, or the sandbox for shell-based git ops.
 
 ## Prompt Requests
-- Use \`createPromptRequest\` when the user says "open a prompt request", "create a prompt request", or similar. Summarize the conversation into clear, actionable instructions in the body field. **Call this tool exactly ONCE per request — never create multiple prompt requests for the same ask.**
-- Use \`editPromptRequest\` when the user asks to update, refine, or change a prompt request. If the user is currently viewing a prompt request page (URL contains \`/prompts/<id>\`), extract the prompt request ID from the URL and use it. Update the title and/or body as requested.
-- Use \`completePromptRequest\` after creating a PR that fulfills a prompt request. Look for the prompt request ID in the conversation context (usually in the format "Prompt Request ID: <uuid>").
-- When processing a prompt request (the message starts with "Process this prompt request"), use stageFile + commitChanges + createPullRequestFromBranch to make changes and create a PR, then call \`completePromptRequest\` with the prompt request ID and PR number.
+- \`createPromptRequest\`: when the user says "open/create a prompt request". Summarize conversation into actionable instructions. Call exactly ONCE per request.
+- \`editPromptRequest\`: when asked to update a prompt request. Extract ID from URL if on a prompt page.
+- \`completePromptRequest\`: after creating a PR that fulfills a prompt request.
+- When processing a prompt request, use stageFile + commitChanges + createPullRequestFromBranch, then call completePromptRequest.
 
-## Memory
-You have long-term memory via \`saveMemory\` and \`recallMemory\`. Use \`saveMemory\` when the user asks you to remember something — preferences, project context, decisions, or any fact they want persisted across conversations. Use \`recallMemory\` when the user asks "do you remember", "what did I say about", or when past context would help. Previously recalled memories (if any) are appended to this prompt — use them naturally without announcing them unless asked.
+${MULTI_FILE_COMMIT_PROMPT}
 
-## Semantic Search (USE FIRST)
-**IMPORTANT:** When the user asks to find, list, or search for PRs/issues by topic or description (e.g. "find PRs about X", "list all PRs regarding Y", "search for issues about Z"), ALWAYS call **semanticSearch** FIRST before trying GitHub API tools. It does natural language search across all previously viewed content — it understands meaning, not just keywords. You can filter by owner, repo, and content type. Only fall back to GitHub search/list tools if semanticSearch returns empty results.
+${QUERYGITHUB_PROMPT}
+
+${MEMORY_PROMPT}
+
+${SEMANTIC_SEARCH_PROMPT}
 
 ${sandboxPrompt || ""}
 
@@ -2202,42 +2093,26 @@ ${sandboxPrompt || ""}
 ${new Date().toISOString().split("T")[0]}${pageContextPrompt}`;
 }
 
-const SANDBOX_PROMPT = `## Cloud Sandbox — Test & Build Execution
+// ─── Shared Prompt Sections ─────────────────────────────────────────────────
 
-Use the sandbox ONLY when you need to execute commands:
-- Running tests (npm test, pytest, etc.)
-- Running builds (npm run build, cargo build, etc.)
-- Running linters/formatters
-- Any task that requires shell execution
+const MEMORY_PROMPT = `## Memory
+Long-term memory via \`saveMemory\` / \`recallMemory\`. Save when the user asks to remember something. Recall when past context would help. Use recalled memories naturally.`;
 
-Sandbox workflow:
-1. **startSandbox** — clone repo into a fresh VM
-2. **sandboxRun** — run commands (install deps, run tests, etc.)
-3. **sandboxReadFile / sandboxWriteFile** — read or edit files in the VM
-4. To commit changes made in sandbox: read modified files with **sandboxReadFile**, then use **stageFile** + **commitChanges** (API-based, no push needed)
-5. **killSandbox** — shut down when done
+const SEMANTIC_SEARCH_PROMPT = `## Semantic Search (USE FIRST)
+When the user asks to find/search PRs/issues by topic, ALWAYS call **semanticSearch** FIRST — it does natural language search across previously viewed content. Only fall back to GitHub API if it returns empty.`;
 
-Do NOT use the sandbox for:
-- Reading or writing files (use GitHub API tools like getFileContent)
-- Creating commits or PRs (use stageFile + commitChanges + createPullRequestFromBranch)
-- Simple git operations like creating branches (use createBranch)
+const MULTI_FILE_COMMIT_PROMPT = `## Multi-file Commits
+For changes spanning multiple files: **stageFile** (one per file) → **commitChanges** → **createPullRequestFromBranch**.`;
 
-For multi-file code changes WITHOUT running commands, prefer the API-based tools:
-1. Read files with getFileContent
-2. Stage changes with stageFile (one call per file)
-3. Commit with commitChanges (creates branch + commit in one step)
-4. Open a PR with createPullRequestFromBranch
+const QUERYGITHUB_PROMPT = `## queryGitHub
+For any read-only query not covered by a specific tool, use queryGitHub to make GET requests to the GitHub REST API (branches, releases, commits, contributors, workflow runs, stats, org members, etc.).`;
 
-IMPORTANT: Do NOT install dependencies if you're only doing git operations. Only install when you actually need to run tests, builds, or code that depends on node_modules.
+const SANDBOX_PROMPT = `## Cloud Sandbox
+Use ONLY for running commands (tests, builds, linters). Workflow: startSandbox → sandboxRun → killSandbox. To commit sandbox changes: sandboxReadFile → stageFile + commitChanges.
+Do NOT use sandbox for file reads/writes or commits — use API tools instead. Only install deps when you need to run code.
 
-## Merge Conflict Resolution (API-based)
-For merge conflicts, use the API-based tools instead of the sandbox:
-1. Call **getMergeConflictInfo** to see file differences between both branches
-2. Analyze both versions and produce resolved content
-3. Call **commitMergeResolution** with the resolved files (creates a merge commit with two parents)
-4. Call **refreshPage** to update the UI
-
-For complex git operations that REQUIRE a shell (cherry-pick, rebase, bisect, etc.), use the sandbox — startSandbox → sandboxRun. Then read results with sandboxReadFile and commit via the API tools.`;
+## Merge Conflicts
+Use getMergeConflictInfo → commitMergeResolution (API-based). For complex git ops (cherry-pick, rebase, bisect), use the sandbox.`;
 
 const MERGE_CONFLICT_PROMPT = `
 

@@ -753,8 +753,7 @@ export function AIChat({
 		"unfollowUser",
 		"markNotificationsRead",
 		"createGist",
-		"commentOnIssue",
-		"commentOnPR",
+		"comment",
 		"addLabels",
 		"removeLabels",
 		"requestReviewers",
@@ -2037,15 +2036,10 @@ export function ToolInvocationDisplay({
 			doneText: hasError ? "API query failed" : "Queried GitHub API",
 		},
 		// Comment tools
-		commentOnIssue: {
+		comment: {
 			icon: MessageSquare,
-			loadingText: `Commenting on issue #${args?.issueNumber || ""}...`,
-			doneText: hasError ? "Failed to comment" : "Commented on issue",
-		},
-		commentOnPR: {
-			icon: MessageSquare,
-			loadingText: `Commenting on PR #${args?.pullNumber || ""}...`,
-			doneText: hasError ? "Failed to comment" : "Commented on PR",
+			loadingText: `Commenting on #${args?.issueNumber || ""}...`,
+			doneText: hasError ? "Failed to comment" : "Commented",
 		},
 		// Label tools
 		addLabels: {

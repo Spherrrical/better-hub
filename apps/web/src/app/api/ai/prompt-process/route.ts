@@ -275,6 +275,8 @@ function buildGitHubTools(octokit: Octokit, owner: string, repo: string, promptR
 						},
 					});
 
+					const totalFilesChanged = blobs.length + deletedFiles.size;
+
 					await octokit.git.createRef({
 						owner,
 						repo,
@@ -305,7 +307,7 @@ function buildGitHubTools(octokit: Octokit, owner: string, repo: string, promptR
 						prNumber: pr.number,
 						prTitle: pr.title,
 						branch,
-						filesChanged: blobs.length + deletedFiles.size,
+						filesChanged: totalFilesChanged,
 					};
 				} catch (e: any) {
 					return {
@@ -593,46 +595,21 @@ async function processPromptRequestInBackground(
 		// Non-critical
 	}
 
-	const systemPrompt = `You are Ghost, an AI developer agent. You are processing a prompt request in the background — there is no user chat, so do NOT ask questions or wait for confirmation. Execute the request fully and autonomously.
+	const systemPrompt = `You are Ghost, an autonomous AI developer. Process the request fully — no questions, no confirmation. Create a Pull Request with the changes.
 
-Your goal: implement the changes described in the prompt request, then create a Pull Request.
+Repository: ${owner}/${repo} | Date: ${new Date().toISOString().split("T")[0]}
 
-## Tools — Two Paths
+## Workflow
+1. Explore: getFileContent, listDirectory, searchCode
+2. Stage: stageFile (full content) / deleteFile per file
+3. Commit: commitAndCreatePR once with all staged changes
 
-### Fast path (STRONGLY PREFERRED — use this for 99% of tasks):
-1. Use getFileContent, listDirectory, searchCode to explore the codebase
-2. Use stageFile to stage each new/modified file (provide FULL content)
-3. Use deleteFile to stage file deletions
-4. Use commitAndCreatePR to create a branch, commit all staged changes, and open a PR in one step
+Rules: always read before modifying, use meaningful branch names (e.g. "feat/add-dark-mode"), write clear PR descriptions.
 
-This path uses the GitHub API directly — no VM, no cloning, no waiting. It completes in seconds.
-
-### Sandbox path (LAST RESORT — only when you must run commands):
-Use ONLY if the task explicitly requires running shell commands like tests, builds, or linters. Examples:
-- "Run the tests and fix any failures"
-- "Build the project and fix build errors"
-
-If you need the sandbox: startSandbox → sandboxRun/sandboxReadFile/sandboxWriteFile → killSandbox
-To commit changes from sandbox: read modified files with sandboxReadFile, then use stageFile + commitAndCreatePR (API-based).
-
-**NEVER use the sandbox just to read or write files.** The fast path tools do that instantly via the API.
-
-## Rules
-- When modifying an existing file, ALWAYS read it first with getFileContent, then stage the complete modified version with stageFile
-- Stage ALL file changes first, then call commitAndCreatePR once
-- Create meaningful branch names (e.g. "feat/add-dark-mode-support")
-- Write clear commit messages and detailed PR descriptions
-- Do NOT ask for confirmation — just do it
-- If you encounter an error, try to work around it
-
-## Repository
-- Owner: ${owner}
-- Repo: ${repo}
-
-## Today's date
-${new Date().toISOString().split("T")[0]}${repoContext}`;
+Sandbox (startSandbox → sandboxRun → killSandbox): ONLY for running tests/builds/linters. Never for file reads/writes — the API tools are instant.${repoContext}`;
 
 	try {
+		let lastProgressUpdate = 0;
 		const result = streamText({
 			model: createOpenRouter({ apiKey })(modelId),
 			system: systemPrompt,
@@ -641,6 +618,9 @@ ${new Date().toISOString().split("T")[0]}${repoContext}`;
 			maxRetries: 3,
 			stopWhen: stepCountIs(50),
 			onStepFinish({ toolResults }) {
+				const now = Date.now();
+				if (now - lastProgressUpdate < 3000) return;
+				lastProgressUpdate = now;
 				const toolNames = toolResults.map((tr) => tr.toolName);
 				const label =
 					toolNames.length > 0 ? toolNames.join(", ") : "thinking";

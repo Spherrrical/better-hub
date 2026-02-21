@@ -4,21 +4,21 @@ import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { Users } from "lucide-react";
 import { revalidateContributorAvatars } from "@/app/(app)/repos/[owner]/[repo]/readme-actions";
-import type { ContributorAvatar } from "@/lib/repo-data-cache";
+import type { ContributorAvatarsData } from "@/lib/repo-data-cache";
 
 export function SidebarContributors({
 	owner,
 	repo,
-	initialAvatars,
+	initialData,
 }: {
 	owner: string;
 	repo: string;
-	initialAvatars: ContributorAvatar[] | null;
+	initialData: ContributorAvatarsData | null;
 }) {
-	const { data: avatars, isLoading } = useQuery({
+	const { data, isLoading } = useQuery({
 		queryKey: ["repo-contributors", owner, repo],
 		queryFn: () => revalidateContributorAvatars(owner, repo),
-		initialData: initialAvatars ?? undefined,
+		initialData: initialData ?? undefined,
 		staleTime: Infinity,
 		gcTime: Infinity,
 		refetchOnMount: "always",
@@ -45,10 +45,11 @@ export function SidebarContributors({
 		);
 	}
 
-	if (!avatars || avatars.length === 0) return null;
+	if (!data || data.avatars.length === 0) return null;
 
+	const { avatars, totalCount } = data;
 	const shown = avatars.slice(0, 12);
-	const remaining = avatars.length > 12 ? avatars.length - 12 : 0;
+	const remaining = totalCount > 12 ? totalCount - 12 : 0;
 
 	return (
 		<div className="flex flex-col gap-2">
@@ -57,7 +58,7 @@ export function SidebarContributors({
 					<Users className="w-3 h-3" />
 					Contributors
 					<span className="text-muted-foreground/70">
-						{avatars.length}
+						{totalCount > avatars.length ? `${totalCount}+` : totalCount}
 					</span>
 				</span>
 			</span>

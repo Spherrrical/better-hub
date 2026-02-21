@@ -40,19 +40,29 @@ export interface ContributorAvatar {
 	avatar_url: string;
 }
 
+export interface ContributorAvatarsData {
+	avatars: ContributorAvatar[];
+	totalCount: number;
+}
+
 export async function getCachedContributorAvatars(
 	owner: string,
 	repo: string,
-): Promise<ContributorAvatar[] | null> {
-	return redis.get<ContributorAvatar[]>(contributorAvatarsKey(owner, repo));
+): Promise<ContributorAvatarsData | null> {
+	const raw = await redis.get<ContributorAvatarsData | ContributorAvatar[]>(
+		contributorAvatarsKey(owner, repo),
+	);
+	if (!raw) return null;
+	if (Array.isArray(raw)) return { avatars: raw, totalCount: raw.length };
+	return raw;
 }
 
 export async function setCachedContributorAvatars(
 	owner: string,
 	repo: string,
-	avatars: ContributorAvatar[],
+	data: ContributorAvatarsData,
 ): Promise<void> {
-	await redis.set(contributorAvatarsKey(owner, repo), avatars);
+	await redis.set(contributorAvatarsKey(owner, repo), data);
 }
 
 export interface BranchRef {

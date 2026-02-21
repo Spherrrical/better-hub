@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { PRAuthorDossier, type AuthorDossierData, type RepoActivity } from "./pr-author-dossier";
 import type { ScoreResult } from "@/lib/contributor-score";
 
@@ -40,27 +40,32 @@ export function LazyAuthorDossier({
 }) {
 	const [data, setData] = useState<AuthorDossierResult | null>(null);
 	const [loaded, setLoaded] = useState(false);
-	const fetchedRef = useRef(false);
 
 	useEffect(() => {
-		if (fetchedRef.current) return;
-		fetchedRef.current = true;
+		let cancelled = false;
 
-		const timeout = setTimeout(() => setLoaded(true), CLIENT_TIMEOUT_MS);
+		const timeout = setTimeout(() => {
+			if (!cancelled) setLoaded(true);
+		}, CLIENT_TIMEOUT_MS);
 
 		onFetch(owner, repo, authorLogin).then(
 			(result) => {
 				clearTimeout(timeout);
-				setData(result);
-				setLoaded(true);
+				if (!cancelled) {
+					setData(result);
+					setLoaded(true);
+				}
 			},
 			() => {
 				clearTimeout(timeout);
-				setLoaded(true);
+				if (!cancelled) setLoaded(true);
 			},
 		);
 
-		return () => clearTimeout(timeout);
+		return () => {
+			cancelled = true;
+			clearTimeout(timeout);
+		};
 	}, [owner, repo, authorLogin, onFetch]);
 
 	if (!loaded) {

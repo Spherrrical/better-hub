@@ -6,17 +6,10 @@ import {
 	getAuthenticatedUser,
 	invalidatePullRequestCache,
 	getRepoBranches,
-	getUser,
-	getUserPublicRepos,
-	getUserPublicOrgs,
-	getPersonRepoActivity,
-	getRepoContributors,
-	type PersonRepoActivity,
 } from "@/lib/github";
 import { computeContributorScore } from "@/lib/contributor-score";
 import { getErrorMessage } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
-import { all } from "better-all";
 
 export async function fetchBranchNames(owner: string, repo: string) {
 	try {
@@ -503,7 +496,135 @@ export async function commitMergeConflictResolution(
 	}
 }
 
-const DOSSIER_TIMEOUT_MS = 8_000;
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function fetchAuthorDossierGraphQL(
+	token: string,
+	owner: string,
+	repo: string,
+	authorLogin: string,
+) {
+	const slug = `${owner}/${repo}`;
+	const query = `
+		query($login: String!) {
+			user(login: $login) {
+				login
+				name
+				avatarUrl
+				bio
+				company
+				location
+				websiteUrl
+				twitterUsername
+				repositories { totalCount }
+				followers { totalCount }
+				following { totalCount }
+				createdAt
+				__typename
+				topRepositories(first: 6, orderBy: {field: STARGAZERS, direction: DESC}) {
+					nodes { name nameWithOwner stargazerCount primaryLanguage { name } }
+				}
+				organizations(first: 10) {
+					nodes { login avatarUrl }
+				}
+			}
+			openPrs: search(query: "repo:${slug} author:${authorLogin} type:pr is:open", type: ISSUE, first: 0) { issueCount }
+			mergedPrs: search(query: "repo:${slug} author:${authorLogin} type:pr is:merged", type: ISSUE, first: 0) { issueCount }
+			closedPrs: search(query: "repo:${slug} author:${authorLogin} type:pr is:unmerged is:closed", type: ISSUE, first: 0) { issueCount }
+			issues: search(query: "repo:${slug} author:${authorLogin} type:issue", type: ISSUE, first: 0) { issueCount }
+			reviews: search(query: "repo:${slug} reviewed-by:${authorLogin} type:pr", type: ISSUE, first: 0) { issueCount }
+		}
+	`;
+
+	const response = await fetch("https://api.github.com/graphql", {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${token}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({ query, variables: { login: authorLogin } }),
+		signal: AbortSignal.timeout(8_000),
+	});
+
+	if (!response.ok) return null;
+	const json = await response.json();
+	const u = json.data?.user;
+	if (!u) return null;
+
+	const orgs: { login: string; avatar_url: string }[] =
+		(u.organizations?.nodes ?? []).map((o: any) => ({
+			login: o.login,
+			avatar_url: o.avatarUrl,
+		}));
+	const topRepos = (u.topRepositories?.nodes ?? []).map((r: any) => ({
+		name: r.name,
+		full_name: r.nameWithOwner,
+		stargazers_count: r.stargazerCount ?? 0,
+		language: r.primaryLanguage?.name ?? null,
+	}));
+	const isOrgMember = orgs.some(
+		(o) => o.login?.toLowerCase() === owner.toLowerCase(),
+	);
+
+	const openPrs = json.data?.openPrs?.issueCount ?? 0;
+	const mergedPrs = json.data?.mergedPrs?.issueCount ?? 0;
+	const closedPrs = json.data?.closedPrs?.issueCount ?? 0;
+	const totalPrs = openPrs + mergedPrs + closedPrs;
+	const issueCount = json.data?.issues?.issueCount ?? 0;
+	const reviewCount = json.data?.reviews?.issueCount ?? 0;
+
+	const prsInRepo: { state: string }[] = [
+		...Array(mergedPrs).fill({ state: "merged" }),
+		...Array(closedPrs).fill({ state: "closed" }),
+		...Array(openPrs).fill({ state: "open" }),
+	];
+
+	const contributionCount = mergedPrs + reviewCount;
+	const isContributor = contributionCount > 0;
+
+	const score = computeContributorScore({
+		followers: u.followers?.totalCount ?? 0,
+		publicRepos: u.repositories?.totalCount ?? 0,
+		accountCreated: u.createdAt ?? "",
+		commitsInRepo: mergedPrs,
+		prsInRepo,
+		reviewsInRepo: reviewCount,
+		isContributor,
+		contributionCount,
+		isOrgMember,
+		isOwner: authorLogin.toLowerCase() === owner.toLowerCase(),
+		topRepoStars: topRepos.map((r: any) => r.stargazers_count),
+	});
+
+	return {
+		author: {
+			login: u.login,
+			name: u.name,
+			avatar_url: u.avatarUrl,
+			bio: u.bio,
+			company: u.company,
+			location: u.location,
+			blog: u.websiteUrl,
+			twitter_username: u.twitterUsername,
+			public_repos: u.repositories?.totalCount ?? 0,
+			followers: u.followers?.totalCount ?? 0,
+			following: u.following?.totalCount ?? 0,
+			created_at: u.createdAt,
+			type: u.__typename === "Bot" ? "Bot" : "User",
+		},
+		orgs,
+		topRepos: topRepos.slice(0, 3),
+		isOrgMember,
+		score,
+		contributionCount,
+		repoActivity: {
+			commits: mergedPrs,
+			prs: totalPrs,
+			reviews: reviewCount,
+			issues: issueCount,
+		},
+	};
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export async function fetchAuthorDossier(
 	owner: string,
@@ -511,81 +632,11 @@ export async function fetchAuthorDossier(
 	authorLogin: string,
 ) {
 	try {
-		const result = await Promise.race([
-			all({
-				authorProfile: () => getUser(authorLogin),
-				authorRepos: () => getUserPublicRepos(authorLogin, 6),
-				authorOrgs: () => getUserPublicOrgs(authorLogin),
-				authorActivity: () => getPersonRepoActivity(owner, repo, authorLogin),
-				contributors: () => getRepoContributors(owner, repo),
-			}),
-			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error("Author dossier timed out")), DOSSIER_TIMEOUT_MS),
-			),
-		]);
-
-		const { authorProfile, authorRepos, authorOrgs, authorActivity, contributors } = result;
-
-		if (!authorProfile) return null;
-
-		const orgs = (authorOrgs ?? []) as { login: string; avatar_url: string }[];
-		const repos = (authorRepos ?? []) as {
-			name: string;
-			full_name: string;
-			stargazers_count: number;
-			language: string | null;
-		}[];
-		const activity = authorActivity as PersonRepoActivity;
-
-		const isOrgMember = orgs.some(
-			(o) => o.login?.toLowerCase() === owner.toLowerCase(),
-		);
-		const contributorEntry = contributors.list?.find(
-			(c) => c.login?.toLowerCase() === authorLogin.toLowerCase(),
-		);
-		const sortedRepos = [...repos]
-			.sort((a, b) => (b.stargazers_count ?? 0) - (a.stargazers_count ?? 0))
-			.slice(0, 6);
-
-		const profile = authorProfile as {
-			followers: number;
-			public_repos: number;
-			created_at: string;
-		};
-		const score = computeContributorScore({
-			followers: profile.followers ?? 0,
-			publicRepos: profile.public_repos ?? 0,
-			accountCreated: profile.created_at ?? "",
-			commitsInRepo: activity.commits?.length ?? 0,
-			prsInRepo: (activity.prs ?? []).map((p) => ({ state: p.state })),
-			reviewsInRepo: activity.reviews?.length ?? 0,
-			isContributor: !!contributorEntry,
-			contributionCount: contributorEntry?.contributions ?? 0,
-			isOrgMember,
-			isOwner: authorLogin.toLowerCase() === owner.toLowerCase(),
-			topRepoStars: sortedRepos.map((r) => r.stargazers_count ?? 0),
-		});
-
-		return {
-			author: authorProfile,
-			orgs: orgs.map((o) => ({ login: o.login, avatar_url: o.avatar_url })),
-			topRepos: sortedRepos.slice(0, 3).map((r) => ({
-				name: r.name,
-				full_name: r.full_name,
-				stargazers_count: r.stargazers_count ?? 0,
-				language: r.language,
-			})),
-			isOrgMember,
-			score,
-			contributionCount: contributorEntry?.contributions ?? 0,
-			repoActivity: {
-				commits: activity.commits?.length ?? 0,
-				prs: activity.prs?.length ?? 0,
-				reviews: activity.reviews?.length ?? 0,
-				issues: activity.issues?.length ?? 0,
-			},
-		};
-	} catch {
+		const token = await getGitHubToken();
+		if (!token) return null;
+		return await fetchAuthorDossierGraphQL(token, owner, repo, authorLogin);
+	} catch (e) {
+		console.error("[fetchAuthorDossier] failed:", e);
 		return null;
 	}
 }

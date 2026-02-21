@@ -18,7 +18,7 @@ import { formatBytes } from "@/lib/github-utils";
 import { StarButton } from "@/components/repo/star-button";
 import { SidebarLanguages } from "@/components/repo/sidebar-languages";
 import { SidebarContributors } from "@/components/repo/sidebar-contributors";
-import type { ContributorAvatar } from "@/lib/repo-data-cache";
+import type { ContributorAvatarsData } from "@/lib/repo-data-cache";
 
 interface LatestCommit {
   sha: string;
@@ -49,7 +49,7 @@ interface RepoSidebarProps {
   archived: boolean;
   fork: boolean;
   parent: { fullName: string; owner: string; name: string } | null;
-  initialContributors: ContributorAvatar[] | null;
+  initialContributors: ContributorAvatarsData | null;
   initialLanguages: Record<string, number> | null;
   latestCommit: LatestCommit | null;
   isStarred: boolean;
@@ -296,7 +296,7 @@ export function RepoSidebar({
         <SidebarContributors
           owner={owner}
           repo={repoName}
-          initialAvatars={initialContributors}
+          initialData={initialContributors}
         />
       </aside>
 

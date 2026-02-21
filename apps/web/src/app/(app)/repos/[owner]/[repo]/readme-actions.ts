@@ -54,21 +54,31 @@ export async function revalidateLanguages(
 export async function revalidateContributorAvatars(
 	owner: string,
 	repo: string,
-): Promise<ContributorAvatar[] | null> {
+): Promise<{ avatars: ContributorAvatar[]; totalCount: number } | null> {
 	const octokit = await getOctokit();
 	if (!octokit) return null;
 
 	try {
-		const { data } = await octokit.repos.listContributors({
+		const response = await octokit.repos.listContributors({
 			owner,
 			repo,
-			per_page: 20,
+			per_page: 30,
 		});
-		const avatars: ContributorAvatar[] = data
+		const avatars: ContributorAvatar[] = response.data
 			.filter((c): c is typeof c & { login: string } => !!c.login)
 			.map((c) => ({ login: c.login!, avatar_url: c.avatar_url ?? "" }));
-		await setCachedContributorAvatars(owner, repo, avatars);
-		return avatars;
+
+		let totalCount = avatars.length;
+		const linkHeader = response.headers.link;
+		if (linkHeader) {
+			const lastMatch = linkHeader.match(/[&?]page=(\d+)>;\s*rel="last"/);
+			if (lastMatch) {
+				totalCount = (parseInt(lastMatch[1], 10) - 1) * 30 + avatars.length;
+			}
+		}
+
+		await setCachedContributorAvatars(owner, repo, { avatars, totalCount });
+		return { avatars, totalCount };
 	} catch {
 		return null;
 	}
