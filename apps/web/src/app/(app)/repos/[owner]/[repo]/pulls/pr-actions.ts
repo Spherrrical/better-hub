@@ -11,6 +11,43 @@ import { computeContributorScore } from "@/lib/contributor-score";
 import { getErrorMessage } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 
+type PRMutationScope = "detail" | "list" | "layout";
+
+const PR_ACTION_SCOPES: Record<string, PRMutationScope[]> = {
+	merge: ["detail", "list", "layout"],
+	close: ["detail", "list", "layout"],
+	reopen: ["detail", "list", "layout"],
+	rename: ["detail", "list"],
+	updateBase: ["detail", "list"],
+	review: ["detail"],
+	comment: ["detail"],
+	reviewComment: ["detail"],
+	suggestion: ["detail"],
+	fileCommit: ["detail"],
+	resolveThread: ["detail"],
+	unresolveThread: ["detail"],
+	conflictResolution: ["detail", "list"],
+};
+
+async function revalidateAfterPRMutation(
+	owner: string,
+	repo: string,
+	pullNumber: number,
+	action: keyof typeof PR_ACTION_SCOPES,
+) {
+	const scopes = PR_ACTION_SCOPES[action] ?? ["detail"];
+	await invalidatePullRequestCache(owner, repo, pullNumber);
+	if (scopes.includes("detail")) {
+		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+	}
+	if (scopes.includes("list")) {
+		revalidatePath(`/repos/${owner}/${repo}/pulls`);
+	}
+	if (scopes.includes("layout")) {
+		revalidatePath(`/repos/${owner}/${repo}`, "layout");
+	}
+}
+
 export async function fetchBranchNames(owner: string, repo: string) {
 	try {
 		const branches = await getRepoBranches(owner, repo);
@@ -36,9 +73,7 @@ export async function updatePRBaseBranch(
 			pull_number: pullNumber,
 			base,
 		});
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
-		revalidatePath(`/repos/${owner}/${repo}/pulls`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "updateBase");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to update base branch" };
@@ -61,9 +96,7 @@ export async function renamePullRequest(
 			pull_number: pullNumber,
 			title,
 		});
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
-		revalidatePath(`/repos/${owner}/${repo}/pulls`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "rename");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to rename" };
@@ -92,10 +125,7 @@ export async function mergePullRequest(
 			...(commitTitle ? { commit_title: commitTitle } : {}),
 			...(commitMessage ? { commit_message: commitMessage } : {}),
 		});
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
-		revalidatePath(`/repos/${owner}/${repo}/pulls`);
-		revalidatePath(`/repos/${owner}/${repo}`, "layout");
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "merge");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to merge" };
@@ -113,10 +143,7 @@ export async function closePullRequest(owner: string, repo: string, pullNumber: 
 			pull_number: pullNumber,
 			state: "closed",
 		});
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
-		revalidatePath(`/repos/${owner}/${repo}/pulls`);
-		revalidatePath(`/repos/${owner}/${repo}`, "layout");
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "close");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to close" };
@@ -134,10 +161,7 @@ export async function reopenPullRequest(owner: string, repo: string, pullNumber:
 			pull_number: pullNumber,
 			state: "open",
 		});
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
-		revalidatePath(`/repos/${owner}/${repo}/pulls`);
-		revalidatePath(`/repos/${owner}/${repo}`, "layout");
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "reopen");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to reopen" };
@@ -164,8 +188,7 @@ export async function submitPRReview(
 			event,
 			...(body ? { body } : {}),
 		});
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "review");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to submit review" };
@@ -183,8 +206,7 @@ export async function addPRComment(owner: string, repo: string, pullNumber: numb
 			issue_number: pullNumber,
 			body,
 		});
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "comment");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to add comment" };
@@ -222,8 +244,7 @@ export async function addPRReviewComment(
 			params.start_side = startSide || side;
 		}
 		await octokit.pulls.createReviewComment(params);
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "reviewComment");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to add review comment" };
@@ -280,8 +301,7 @@ export async function commitSuggestion(
 			branch,
 		});
 
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "suggestion");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to commit suggestion" };
@@ -311,8 +331,7 @@ export async function commitFileEditOnPR(
 			sha,
 			branch,
 		});
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "fileCommit");
 		return { success: true, newSha: data.content?.sha };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to commit file edit" };
@@ -348,8 +367,7 @@ export async function resolveReviewThread(
 		if (json.errors?.length) {
 			return { error: json.errors[0].message };
 		}
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "resolveThread");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to resolve thread" };
@@ -385,8 +403,7 @@ export async function unresolveReviewThread(
 		if (json.errors?.length) {
 			return { error: json.errors[0].message };
 		}
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "unresolveThread");
 		return { success: true };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to unresolve thread" };
@@ -487,9 +504,7 @@ export async function commitMergeConflictResolution(
 			sha: mergeCommit.sha,
 		});
 
-		await invalidatePullRequestCache(owner, repo, pullNumber);
-		revalidatePath(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
-		revalidatePath(`/repos/${owner}/${repo}/pulls`);
+		await revalidateAfterPRMutation(owner, repo, pullNumber, "conflictResolution");
 		return { success: true, mergeCommitSha: mergeCommit.sha };
 	} catch (e: unknown) {
 		return { error: getErrorMessage(e) || "Failed to commit merge resolution" };

@@ -30,6 +30,7 @@ import {
 	type MergeMethod,
 } from "@/app/(app)/repos/[owner]/[repo]/pulls/pr-actions";
 import { useMutationEvents } from "@/components/shared/mutation-event-provider";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface PRMergePanelProps {
 	owner: string;
@@ -92,6 +93,7 @@ export function PRMergePanel({
 	const router = useRouter();
 	const { openChat } = useGlobalChat();
 	const { emit } = useMutationEvents();
+	const queryClient = useQueryClient();
 	const [method, setMethod] = useState<MergeMethod>(availableMethods[0] ?? "merge");
 	const [dropdownOpen, setDropdownOpen] = useState(false);
 	const [squashDialogOpen, setSquashDialogOpen] = useState(false);
@@ -173,6 +175,10 @@ export function PRMergePanel({
 		}
 	}, [result]);
 
+	const invalidatePRListQueries = useCallback(() => {
+		queryClient.removeQueries({ queryKey: ["prs", owner, repo] });
+	}, [queryClient, owner, repo]);
+
 	const doMerge = (mergeMethod: MergeMethod, title?: string, message?: string) => {
 		setResult(null);
 		startTransition(async () => {
@@ -189,6 +195,7 @@ export function PRMergePanel({
 			} else {
 				setResult({ type: "success", message: "Merged" });
 				emit({ type: "pr:merged", owner, repo, number: pullNumber });
+				invalidatePRListQueries();
 				setSquashDialogOpen(false);
 				setIsMerged(true);
 				router.refresh();
@@ -219,6 +226,7 @@ export function PRMergePanel({
 			} else {
 				setResult({ type: "success", message: "Closed" });
 				emit({ type: "pr:closed", owner, repo, number: pullNumber });
+				invalidatePRListQueries();
 				router.refresh();
 			}
 		});
@@ -233,6 +241,7 @@ export function PRMergePanel({
 			} else {
 				setResult({ type: "success", message: "Reopened" });
 				emit({ type: "pr:reopened", owner, repo, number: pullNumber });
+				invalidatePRListQueries();
 				router.refresh();
 			}
 		});

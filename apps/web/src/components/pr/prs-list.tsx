@@ -29,7 +29,8 @@ import {
 import { LabelBadge } from "@/components/shared/label-badge";
 import { useMutationSubscription } from "@/hooks/use-mutation-subscription";
 import { isRepoEvent, type MutationEvent } from "@/lib/mutation-events";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerInitialData } from "@/hooks/use-server-initial-data";
 
 interface PRUser {
 	login: string;
@@ -222,8 +223,35 @@ export function PRsList({
 
 	type PRPage = { prs: PR[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } };
 
+	const queryClient = useQueryClient();
+
+	const openDataFingerprint = useMemo(() => {
+		if (initialOpenPRs.length === 0) return "empty";
+		const ids = initialOpenPRs.slice(0, 5).map((pr) => pr.id).join("-");
+		return `${ids}:${initialOpenPRs.length}:${initialPageInfo.endCursor ?? ""}`;
+	}, [initialOpenPRs, initialPageInfo]);
+
+	const openQueryKey = useMemo(() => ["prs", owner, repo, "open"], [owner, repo]);
+	const closedQueryKey = useMemo(() => ["prs", owner, repo, "closed"], [owner, repo]);
+
+	useServerInitialData(
+		openQueryKey,
+		{
+			pages: [{ prs: initialOpenPRs, pageInfo: initialPageInfo }],
+			pageParams: [null],
+		},
+		openDataFingerprint,
+	);
+
+	// When open data changes (e.g. a PR was merged/closed), also clear the
+	// stale closed-query cache so it re-fetches when the user switches tabs.
+	useEffect(() => {
+		queryClient.removeQueries({ queryKey: closedQueryKey });
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [openDataFingerprint]);
+
 	const openQuery = useInfiniteQuery<PRPage, Error, { pages: PRPage[]; pageParams: (string | null)[] }, string[], string | null>({
-		queryKey: ["prs", owner, repo, "open"],
+		queryKey: openQueryKey,
 		queryFn: async ({ pageParam }) => {
 			if (!onFetchPRPage) return { prs: [], pageInfo: { hasNextPage: false, endCursor: null } };
 			return onFetchPRPage(owner, repo, "open", pageParam) as Promise<PRPage>;
@@ -238,7 +266,7 @@ export function PRsList({
 	});
 
 	const closedQuery = useInfiniteQuery<PRPage, Error, { pages: PRPage[]; pageParams: (string | null)[] }, string[], string | null>({
-		queryKey: ["prs", owner, repo, "closed"],
+		queryKey: closedQueryKey,
 		queryFn: async ({ pageParam }) => {
 			if (!onFetchPRPage) return { prs: [], pageInfo: { hasNextPage: false, endCursor: null } };
 			return onFetchPRPage(owner, repo, "closed", pageParam) as Promise<PRPage>;
