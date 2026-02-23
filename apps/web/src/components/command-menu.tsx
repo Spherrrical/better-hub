@@ -465,11 +465,11 @@ export function CommandMenu() {
 				setOpen(true);
 			}
 			if (e.key === "t" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-				const target = e.target as HTMLElement;
+				const active = document.activeElement as HTMLElement | null;
 				if (
-					target.tagName === "INPUT" ||
-					target.tagName === "TEXTAREA" ||
-					target.isContentEditable
+					active?.tagName === "INPUT" ||
+					active?.tagName === "TEXTAREA" ||
+					active?.isContentEditable
 				)
 					return;
 				if (!matchRepoFromPathname(window.location.pathname)) return;

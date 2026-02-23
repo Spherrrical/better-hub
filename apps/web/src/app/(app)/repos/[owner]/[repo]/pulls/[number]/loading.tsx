@@ -69,7 +69,9 @@ export default function PRDetailLoading() {
 								<div className="h-3.5 w-3.5 rounded bg-muted/25 shrink-0" />
 								<div
 									className="h-3.5 rounded bg-muted/30"
-									style={{ width: file.nameW }}
+									style={{
+										width: file.nameW,
+									}}
 								/>
 								<div className="flex items-center gap-1 ml-auto shrink-0">
 									<div className="h-3 w-10 rounded bg-green-500/15" />
@@ -181,7 +183,8 @@ export default function PRDetailLoading() {
 								className={`h-3 rounded ${
 									line.type === "add"
 										? "bg-green-500/10"
-										: line.type === "del"
+										: line.type ===
+											  "del"
 											? "bg-red-500/10"
 											: "bg-muted/15"
 								}`}

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useTransition } from "react";
-import Link from "next/link";
+import { RepoBreadcrumb } from "@/components/repo/repo-breadcrumb";
+import { useState, useCallback, useRef, useTransition } from "react";
 import { PanelLeft } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { setRepoSidebarState } from "./repo-sidebar-actions";
@@ -11,6 +11,7 @@ interface RepoLayoutWrapperProps {
 	children: React.ReactNode;
 	owner: string;
 	repo: string;
+	ownerType: string;
 	initialCollapsed?: boolean;
 	initialWidth?: number;
 }
@@ -26,6 +27,7 @@ export function RepoLayoutWrapper({
 	repo,
 	initialCollapsed = false,
 	initialWidth = DEFAULT_WIDTH,
+	ownerType,
 }: RepoLayoutWrapperProps) {
 	const [sidebarWidth, setSidebarWidth] = useState(initialCollapsed ? 0 : initialWidth);
 	const lastOpenWidthRef = useRef(initialWidth);
@@ -199,21 +201,13 @@ export function RepoLayoutWrapper({
 				}
 			>
 				<div
-					className={`hidden lg:flex items-center gap-1 text-xs px-2 pt-3 pb-1 ${collapsed ? "visible" : "invisible"}`}
+					className={`hidden lg:flex px-2 pt-3 pb-1 ${collapsed ? "visible" : "invisible"}`}
 				>
-					<Link
-						href={`/${owner}`}
-						className="text-muted-foreground/60 hover:text-foreground transition-colors tracking-tight"
-					>
-						{owner}
-					</Link>
-					<span className="text-muted-foreground/30">/</span>
-					<Link
-						href={`/${owner}/${repo}`}
-						className="font-medium text-foreground hover:text-foreground/80 transition-colors tracking-tight"
-					>
-						{repo}
-					</Link>
+					<RepoBreadcrumb
+						owner={owner}
+						repoName={repo}
+						ownerType={ownerType}
+					/>
 				</div>
 				{children}
 			</div>

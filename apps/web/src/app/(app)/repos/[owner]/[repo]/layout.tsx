@@ -154,6 +154,7 @@ export default async function RepoLayout({
 			<RepoLayoutWrapper
 				owner={owner}
 				repo={repoName}
+				ownerType={repoData.owner.type}
 				initialCollapsed={sidebarState?.collapsed}
 				initialWidth={sidebarState?.width}
 				sidebar={

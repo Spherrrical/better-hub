@@ -17,6 +17,7 @@ import { StarButton } from "@/components/repo/star-button";
 import { SidebarLanguages } from "@/components/repo/sidebar-languages";
 import { SidebarContributors } from "@/components/repo/sidebar-contributors";
 import { LatestCommitSection } from "@/components/repo/latest-commit-section";
+import { RepoBreadcrumb } from "@/components/repo/repo-breadcrumb";
 import type { ContributorAvatarsData } from "@/lib/repo-data-cache";
 
 interface LatestCommit {
@@ -94,21 +95,11 @@ export function RepoSidebar({
 			<aside className="hidden lg:flex w-[260px] shrink-0 overflow-y-auto pt-0 px-4 pb-4 flex-col gap-5">
 				{/* Name + Avatar + Description + Badges */}
 				<div className="flex flex-col gap-2">
-					<div className="flex items-center gap-1 text-xs">
-						<Link
-							href={`/${owner}`}
-							className="text-muted-foreground/60 hover:text-foreground transition-colors tracking-tight"
-						>
-							{owner}
-						</Link>
-						<span className="text-muted-foreground/30">/</span>
-						<Link
-							href={`/${owner}/${repoName}`}
-							className="font-medium text-foreground hover:text-foreground/80 transition-colors tracking-tight"
-						>
-							{repoName}
-						</Link>
-					</div>
+					<RepoBreadcrumb
+						owner={owner}
+						repoName={repoName}
+						ownerType={ownerType}
+					/>
 					<Image
 						src={avatarUrl}
 						alt=""

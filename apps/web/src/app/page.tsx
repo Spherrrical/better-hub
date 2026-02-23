@@ -66,10 +66,7 @@ export default async function HomePage() {
 					fill="none"
 					xmlns="http://www.w3.org/2000/svg"
 				>
-					<path
-						d={LOGO_SVG_PATH}
-						fill="url(#paint0_hero)"
-					/>
+					<path d={LOGO_SVG_PATH} fill="url(#paint0_hero)" />
 					<defs>
 						<linearGradient
 							id="paint0_hero"
@@ -80,10 +77,7 @@ export default async function HomePage() {
 							gradientUnits="userSpaceOnUse"
 						>
 							<stop stopColor="white" />
-							<stop
-								offset="1"
-								stopColor="#999999"
-							/>
+							<stop offset="1" stopColor="#999999" />
 						</linearGradient>
 					</defs>
 				</svg>
