@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { getRepoPageData } from "@/lib/github";
 import { TrackView } from "@/components/shared/track-view";
 import { RepoOverview, type RepoOverviewProps } from "@/components/repo/repo-overview";
-import { getCachedReadmeHtml } from "@/lib/readme-cache";
 import {
 	getCachedOverviewPRs,
 	getCachedOverviewIssues,
@@ -30,7 +29,6 @@ export default async function RepoPage({
 	const { owner, repo } = await params;
 
 	const pageDataPromise = getRepoPageData(owner, repo);
-	const readmePromise = getCachedReadmeHtml(owner, repo);
 
 	const pageDataResult = await pageDataPromise;
 	if (!pageDataResult.success) return null;
@@ -41,7 +39,7 @@ export default async function RepoPage({
 
 	// Cache data is opaque to the server — passed through as initialData to client useQuery hooks
 	const [
-		readmeHtmlRaw,
+		readmeHtml,
 		initialPRs,
 		initialIssues,
 		initialEvents,
@@ -49,7 +47,7 @@ export default async function RepoPage({
 		initialCIStatus,
 		initialPinnedItems,
 	] = (await Promise.all([
-		readmePromise,
+		revalidateReadme(owner, repo, repoData.default_branch),
 		isMaintainer ? getCachedOverviewPRs(owner, repo) : null,
 		isMaintainer ? getCachedOverviewIssues(owner, repo) : null,
 		isMaintainer ? getCachedOverviewEvents(owner, repo) : null,
@@ -65,9 +63,6 @@ export default async function RepoPage({
 		RepoOverviewProps["initialCIStatus"],
 		RepoOverviewProps["initialPinnedItems"],
 	];
-
-	const readmeHtml =
-		readmeHtmlRaw ?? (await revalidateReadme(owner, repo, repoData.default_branch));
 
 	return (
 		<div className={isMaintainer ? "flex flex-col flex-1 min-h-0" : undefined}>

@@ -15,8 +15,8 @@ export interface ProfileScoreInput {
 export interface ProfileScoreResult {
 	total: number; // 0-100
 	communityPresence: number; // 0-25
-	ossImpact: number; // 0-30
-	activity: number; // 0-25
+	ossImpact: number; // 0-25
+	activity: number; // 0-30
 	ecosystem: number; // 0-20
 }
 
@@ -24,22 +24,30 @@ function accountAgeYears(created: string): number {
 	return (Date.now() - new Date(created).getTime()) / 3.154e10;
 }
 
+/** Logarithmic scaling: maps a value to 0–max using log curve.
+ *  `ref` is the reference value that maps to ~70% of max. */
+function logScale(value: number, ref: number, max: number): number {
+	if (value <= 0) return 0;
+	// log1p gives smooth curve; normalize so `ref` → ~0.7 * max
+	const normalized = Math.log1p(value) / Math.log1p(ref);
+	return Math.min(Math.round(normalized * max * 0.7), max);
+}
+
 function scoreCommunityPresence(input: ProfileScoreInput): number {
 	let s = 0;
 
-	// Account age: <1y=1, 1-3y=2, 3-6y=3, 6-10y=4, 10+=5
+	// Account age (0-5): rewards long-term presence
 	const years = accountAgeYears(input.accountCreated);
 	s += years < 1 ? 1 : years < 3 ? 2 : years < 6 ? 3 : years < 10 ? 4 : 5;
 
-	// Followers: 0-5=1, 5-25=3, 25-100=5, 100-500=8, 500-2k=10, 2k+=12
-	const f = input.followers;
-	s += f < 5 ? 1 : f < 25 ? 3 : f < 100 ? 5 : f < 500 ? 8 : f < 2000 ? 10 : 12;
+	// Followers (0-12): log scale, ref=200 → ~8.4 pts
+	s += logScale(input.followers, 200, 12);
 
-	// Follower/following ratio: <0.5=0, 0.5-1=1, 1-3=2, 3-10=3, 10+=4
+	// Follower/following ratio (0-4): influence signal
 	const ratio = input.following > 0 ? input.followers / input.following : input.followers > 0 ? 10 : 0;
 	s += ratio < 0.5 ? 0 : ratio < 1 ? 1 : ratio < 3 ? 2 : ratio < 10 ? 3 : 4;
 
-	// Has bio: yes=4, no=0
+	// Has bio (0-4)
 	if (input.hasBio) s += 4;
 
 	return Math.min(s, 25);
@@ -48,43 +56,39 @@ function scoreCommunityPresence(input: ProfileScoreInput): number {
 function scoreOSSImpact(input: ProfileScoreInput): number {
 	let s = 0;
 
-	// Top repo stars: 0=0, 1-10=2, 10-50=5, 50-200=8, 200-1k=11, 1k+=15
-	const top = input.topRepoStars;
-	s += top === 0 ? 0 : top <= 10 ? 2 : top <= 50 ? 5 : top <= 200 ? 8 : top <= 1000 ? 11 : 15;
+	// Top repo stars (0-10): log scale, ref=500 → ~7 pts
+	s += logScale(input.topRepoStars, 500, 10);
 
-	// Total stars: 0=0, 1-20=2, 20-100=4, 100-500=6, 500-2k=8, 2k+=10
-	const ts = input.totalStars;
-	s += ts === 0 ? 0 : ts <= 20 ? 2 : ts <= 100 ? 4 : ts <= 500 ? 6 : ts <= 2000 ? 8 : 10;
+	// Total stars (0-10): log scale, ref=500 → ~7 pts
+	s += logScale(input.totalStars, 500, 10);
 
-	// Total forks: 0=0, 1-10=1, 10-50=2, 50-200=3, 200+=5
-	const fk = input.totalForks;
-	s += fk === 0 ? 0 : fk <= 10 ? 1 : fk <= 50 ? 2 : fk <= 200 ? 3 : 5;
+	// Total forks (0-5): log scale, ref=100 → ~3.5 pts
+	s += logScale(input.totalForks, 100, 5);
 
-	return Math.min(s, 30);
+	return Math.min(s, 25);
 }
 
 function scoreActivity(input: ProfileScoreInput): number {
 	let s = 0;
 
-	// Yearly contributions: 0=0, 1-50=2, 50-200=5, 200-500=8, 500-1k=11, 1k+=15
-	const c = input.totalContributions;
-	s += c === 0 ? 0 : c <= 50 ? 2 : c <= 200 ? 5 : c <= 500 ? 8 : c <= 1000 ? 11 : 15;
+	// Yearly contributions (0-18): log scale, ref=800 → ~12.6 pts
+	// This is the single most important metric — sustained effort
+	s += logScale(input.totalContributions, 800, 18);
 
-	// Public repos: 0=0, 1-5=2, 5-15=4, 15-40=6, 40-100=8, 100+=10
-	const r = input.publicRepos;
-	s += r === 0 ? 0 : r <= 5 ? 2 : r <= 15 ? 4 : r <= 40 ? 6 : r <= 100 ? 8 : 10;
+	// Public repos (0-12): log scale, ref=50 → ~8.4 pts
+	s += logScale(input.publicRepos, 50, 12);
 
-	return Math.min(s, 25);
+	return Math.min(s, 30);
 }
 
 function scoreEcosystem(input: ProfileScoreInput): number {
 	let s = 0;
 
-	// Org memberships: 0=0, 1=3, 2-3=6, 4-7=9, 8+=12
+	// Org memberships (0-12)
 	const o = input.orgCount;
 	s += o === 0 ? 0 : o === 1 ? 3 : o <= 3 ? 6 : o <= 7 ? 9 : 12;
 
-	// Language diversity: 0-1=0, 2=2, 3-4=4, 5-7=6, 8+=8
+	// Language diversity (0-8)
 	const l = input.languageCount;
 	s += l <= 1 ? 0 : l === 2 ? 2 : l <= 4 ? 4 : l <= 7 ? 6 : 8;
 

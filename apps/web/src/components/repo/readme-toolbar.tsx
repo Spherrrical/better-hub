@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Check, ChevronDown, Copy, ExternalLink } from "lucide-react";
+import { Check, ChevronDown, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ReadmeToolbarProps {
@@ -9,6 +9,7 @@ interface ReadmeToolbarProps {
 	repo: string;
 	branch: string;
 	fetchMarkdown: (owner: string, repo: string, branch: string) => Promise<string | null>;
+	onRevalidate?: () => Promise<void>;
 }
 
 const CHAT_SERVICES = [
@@ -72,9 +73,10 @@ const CHAT_SERVICES = [
 	},
 ] as const;
 
-export function ReadmeToolbar({ owner, repo, branch, fetchMarkdown }: ReadmeToolbarProps) {
+export function ReadmeToolbar({ owner, repo, branch, fetchMarkdown, onRevalidate }: ReadmeToolbarProps) {
 	const [copied, setCopied] = useState(false);
 	const [loading, setLoading] = useState(false);
+	const [refreshing, setRefreshing] = useState(false);
 	const [dropdownOpen, setDropdownOpen] = useState(false);
 	const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -115,8 +117,31 @@ export function ReadmeToolbar({ owner, repo, branch, fetchMarkdown }: ReadmeTool
 		return () => document.removeEventListener("mousedown", handleClickOutside);
 	}, [dropdownOpen]);
 
+	async function handleRefresh() {
+		if (!onRevalidate) return;
+		setRefreshing(true);
+		try {
+			await onRevalidate();
+		} finally {
+			setRefreshing(false);
+		}
+	}
+
 	return (
 		<div className="flex items-center gap-0">
+			{onRevalidate && (
+				<>
+					<button
+						onClick={handleRefresh}
+						disabled={refreshing}
+						className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60 hover:text-foreground/80 transition-colors cursor-pointer disabled:opacity-50"
+					>
+						<RefreshCw className={cn("w-3 h-3", refreshing && "animate-spin")} />
+						Refresh
+					</button>
+					<span className="w-px h-3 bg-border/40" />
+				</>
+			)}
 			<button
 				onClick={handleCopy}
 				disabled={loading}

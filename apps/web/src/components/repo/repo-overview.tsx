@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -31,7 +31,7 @@ import { isRepoEvent, type MutationEvent } from "@/lib/mutation-events";
 import { useReadme } from "@/hooks/use-readme";
 import { MarkdownCopyHandler } from "@/components/shared/markdown-copy-handler";
 import { ReadmeToolbar } from "@/components/repo/readme-toolbar";
-import { fetchReadmeMarkdown } from "@/app/(app)/repos/[owner]/[repo]/readme-actions";
+import { fetchReadmeMarkdown, revalidateReadme } from "@/app/(app)/repos/[owner]/[repo]/readme-actions";
 import {
 	fetchOverviewPRs,
 	fetchOverviewIssues,
@@ -1013,7 +1013,12 @@ export function RepoOverview({
 	const hotItems = isMaintainer ? computeHotItems(openPRs, openIssues, base) : [];
 
 	// README data — always fetch for maintainers so the toggle is instant
-	const { data: readmeHtml } = useReadme(owner, repo, branch, initialReadmeHtml ?? null);
+	const { data: readmeHtml, setReadmeHtml } = useReadme(owner, repo, branch, initialReadmeHtml ?? null);
+
+	const handleRevalidateReadme = useCallback(async () => {
+		const html = await revalidateReadme(owner, repo, branch);
+		if (html) setReadmeHtml(html);
+	}, [owner, repo, branch, setReadmeHtml]);
 
 	if (isMaintainer && previewPublic) {
 		return (
@@ -1036,6 +1041,7 @@ export function RepoOverview({
 								repo={repo}
 								branch={branch}
 								fetchMarkdown={fetchReadmeMarkdown}
+								onRevalidate={handleRevalidateReadme}
 							/>
 						</div>
 						<div className="px-6 py-5">
@@ -1136,6 +1142,7 @@ export function RepoOverview({
 							repo={repo}
 							branch={branch}
 							fetchMarkdown={fetchReadmeMarkdown}
+							onRevalidate={handleRevalidateReadme}
 						/>
 					</div>
 					<div className="px-6 py-5">

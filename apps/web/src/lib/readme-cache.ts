@@ -15,3 +15,7 @@ export async function setCachedReadmeHtml(
 ): Promise<void> {
 	await redis.set(readmeKey(owner, repo), html, { ex: 60 * 60 });
 }
+
+export async function deleteCachedReadmeHtml(owner: string, repo: string): Promise<void> {
+	await redis.del(readmeKey(owner, repo));
+}

@@ -904,12 +904,33 @@ async function fetchUserProfileFromGitHub(octokit: Octokit, username: string) {
 }
 
 async function fetchUserPublicReposFromGitHub(octokit: Octokit, username: string, perPage: number) {
-	const { data } = await octokit.repos.listForUser({
-		username,
-		sort: "updated",
-		per_page: perPage,
-	});
-	return data;
+	// Fetch recently-updated repos for the listing + top-starred repos via
+	// search API for accurate profile scoring (listForUser can't sort by stars).
+	const half = Math.ceil(perPage / 2);
+	const [byUpdated, topStarred] = await Promise.all([
+		octokit.repos.listForUser({ username, sort: "updated", per_page: half }),
+		octokit.search.repos({
+			q: `user:${username} fork:true`,
+			sort: "stars",
+			order: "desc",
+			per_page: half,
+		}).catch(() => null),
+	]);
+	if (!topStarred) return byUpdated.data;
+	// Merge and deduplicate — recently-updated first, then top-starred fills gaps
+	const seen = new Set<number>();
+	const merged = [];
+	for (const repo of byUpdated.data) {
+		seen.add(repo.id);
+		merged.push(repo);
+	}
+	for (const repo of topStarred.data.items) {
+		if (!seen.has(repo.id)) {
+			seen.add(repo.id);
+			merged.push(repo as (typeof byUpdated.data)[number]);
+		}
+	}
+	return merged;
 }
 
 async function fetchUserPublicOrgsFromGitHub(octokit: Octokit, username: string) {

@@ -39,8 +39,8 @@ function scoreDescription(total: number): string {
 
 const CATEGORIES = [
 	{ key: "communityPresence" as const, label: "Community", max: 25, color: "bg-emerald-400/70" },
-	{ key: "ossImpact" as const, label: "OSS Impact", max: 30, color: "bg-blue-400/70" },
-	{ key: "activity" as const, label: "Activity", max: 25, color: "bg-green-400/70" },
+	{ key: "ossImpact" as const, label: "OSS Impact", max: 25, color: "bg-blue-400/70" },
+	{ key: "activity" as const, label: "Activity", max: 30, color: "bg-green-400/70" },
 	{ key: "ecosystem" as const, label: "Ecosystem", max: 20, color: "bg-amber-400/70" },
 ];
 
